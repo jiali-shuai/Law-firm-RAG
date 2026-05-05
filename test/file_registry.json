@@ -1,0 +1,22 @@
+[
+  {
+    "file_name": "falv.docx",
+    "collection_name": "falv",
+    "source_id": 1
+  },
+  {
+    "file_name": "anli.docx",
+    "collection_name": "falv",
+    "source_id": 2
+  },
+  {
+    "file_name": "falv.docx",
+    "collection_name": "minshi",
+    "source_id": 3
+  },
+  {
+    "file_name": "anli.docx",
+    "collection_name": "minshi",
+    "source_id": 4
+  }
+]
