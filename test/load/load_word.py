@@ -1,7 +1,6 @@
 """使用BGE-M3语义相似度进行智能分块 - 动态百分位法区分灰色地带，灰色地带交由LLM"""
 
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI
 from FlagEmbedding import BGEM3FlagModel
 import numpy as np
 import json

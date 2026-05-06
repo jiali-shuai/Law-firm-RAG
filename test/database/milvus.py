@@ -136,7 +136,7 @@ def dense_to_milvus_format(query_dense: np.ndarray) -> List[List[float]]:
 
 """将稀疏向量转换为Milvus格式"""
 def sparse_to_milvus_format(query_sparse: List[Dict[int, float]]):
-    
+
     query_sparse = [query_sparse]
     return query_sparse
 

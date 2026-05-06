@@ -4,6 +4,7 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
+
 from agent.reception_agent import ReceptionAgent
 from agent.civil_lawyer_agent import CivilLawyerAgent
 from agent.criminal_lawyer_agent import CriminalLawyerAgent
