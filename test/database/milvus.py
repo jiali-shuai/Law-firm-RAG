@@ -1,17 +1,19 @@
 from pymilvus import MilvusClient, FieldSchema, CollectionSchema, DataType
 import numpy as np
-import json
-from typing import List, Dict
+from typing import List, Dict,Optional
 from config import MILVUS_URI, COLLECTION_NAME
 
 
 """连接Milvus数据库"""
+client = None
 def get_client():
     global client
-    client = MilvusClient(uri=MILVUS_URI)
-    print("✅ Milvus 连接成功！")
+    if client is None:
+        client = MilvusClient(uri=MILVUS_URI)
     return client
 
+
+"""""""""""""""""""""""""""""""""插入数据阶段"""""""""""""""""""""""""""""""""
 """创建新集合（名称+描述）"""
 def create_collection_entry(collection_name: str, description: str):
 
@@ -55,7 +57,7 @@ def insert_bge_m3_vectors(
     texts: List[str],
     dense_embeddings: np.ndarray,
     sparse_embeddings: List[Dict[int, float]],
-    collection_name: str = None,
+    collection_name: Optional[str] = None,
     source_id: int = 0,
 ):
 
@@ -91,8 +93,12 @@ def insert_bge_m3_vectors(
     return chunk_ids
 
 
+
+
+
+"""""""""""""""""""""""""""""""""检索数据阶段"""""""""""""""""""""""""""""""""
 """搜索密集向量"""
-def search_dense_vectors(query_dense, dense_top_k, collection_name=None):
+def search_dense_vectors(query_dense, dense_top_k,collection_name:Optional[str]=None):
     target = collection_name or COLLECTION_NAME
     client = get_client()
     client.load_collection(target)
@@ -110,7 +116,7 @@ def search_dense_vectors(query_dense, dense_top_k, collection_name=None):
 
 
 """搜索稀疏向量"""
-def search_sparse_vectors(query_sparse, sparse_top_k, collection_name=None):
+def search_sparse_vectors(query_sparse, sparse_top_k,collection_name:Optional[str]=None):
     target = collection_name or COLLECTION_NAME
     client = get_client()
     client.load_collection(target)
@@ -142,7 +148,7 @@ def sparse_to_milvus_format(query_sparse: List[Dict[int, float]]):
 
 
 """ BGE-M3 双路混合检索（dense + sparse）"""
-def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, alpha, collection_name=None):
+def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, alpha,collection_name:Optional[str]=None):
 
     dense_res = search_dense_vectors(dense_to_milvus_format(query_dense), dense_top_k, collection_name)
     sparse_res = search_sparse_vectors(sparse_to_milvus_format(query_sparse), sparse_top_k, collection_name)
@@ -165,6 +171,18 @@ def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, a
                 "d_score": 0,
                 "s_score": hit.distance
             }
+    """归一化处理"""
+    all_d = [info["d_score"] for info in doc_dict.values()]
+    all_s = [info["s_score"] for info in doc_dict.values()]
+
+    d_min, d_max = min(all_d), max(all_d)
+    s_min, s_max = min(all_s), max(all_s)
+    d_range = d_max - d_min
+    s_range = s_max - s_min
+
+    for info in doc_dict.values():
+        info["d_score"] = (info["d_score"] - d_min) / d_range if d_range > 0 else 0
+        info["s_score"] = (info["s_score"] - s_min) / s_range if s_range > 0 else 0
 
     combined = []
     for doc_id, info in doc_dict.items():
@@ -179,6 +197,9 @@ def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, a
     return [combined[:dense_top_k + sparse_top_k]]
 
 
+
+
+"""""""""""""""""""""""""""""""""返回数据阶段"""""""""""""""""""""""""""""""""
 """列出所有集合（名称+描述）"""
 def list_collections():
     client = get_client()
@@ -196,75 +217,6 @@ def list_collections():
     return result
 
 
-""" JSON 文件注册表 — 文件 → 集合 → source_id """
-import os as _os
-
-_FILE_REGISTRY_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "file_registry.json")
-
-
-def _load_registry() -> list:
-    if _os.path.exists(_FILE_REGISTRY_PATH):
-        with open(_FILE_REGISTRY_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-
-def _save_registry(data: list):
-    with open(_FILE_REGISTRY_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def _next_source_id() -> int:
-    registry = _load_registry()
-    if not registry:
-        return 1
-    return max(item.get("source_id", 0) for item in registry) + 1
-
-
-def register_file_source(file_name: str, collection_name: str, source_id: int):
-    registry = _load_registry()
-    registry.append({
-        "file_name": file_name,
-        "collection_name": collection_name,
-        "source_id": source_id,
-    })
-    _save_registry(registry)
-    print(f"✅ 文件 '{file_name}' 注册完成，source_id={source_id} → 集合 '{collection_name}'")
-
-
-def list_registered_files() -> list:
-    return _load_registry()
-
-
-def delete_file_by_source(file_name: str):
-    registry = _load_registry()
-    entry = None
-    for item in registry:
-        if item["file_name"] == file_name:
-            entry = item
-            break
-    if not entry:
-        raise ValueError(f"未找到文件 '{file_name}' 的记录")
-
-    source_id = entry["source_id"]
-    collection_name = entry["collection_name"]
-
-    client = get_client()
-    if client.has_collection(collection_name):
-        client.load_collection(collection_name)
-        filter_expr = f"source_id == {source_id}"
-        try:
-            client.delete(collection_name=collection_name, filter=filter_expr)
-            print(f"✅ 从集合 '{collection_name}' 删除 source_id={source_id} 的所有chunk")
-        except Exception as e:
-            print(f"⚠️ 删除chunk失败: {e}")
-            raise RuntimeError(f"删除chunk失败: {e}")
-
-    registry = [item for item in registry if item["file_name"] != file_name]
-    _save_registry(registry)
-    print(f"✅ 文件 '{file_name}' 注册记录已删除")
-
-    return {"file_name": file_name, "source_id": source_id, "collection_name": collection_name}
 
 
 

@@ -1,14 +1,18 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from llmodel.llm import CHAT_LLM, REASONER_LLM
+from agent.legal_graph import LegalGraph
+
 router = APIRouter()
 
 
 class ParamOverride(BaseModel):
-    dense_top_k: int | None = None
-    sparse_top_k: int | None = None
-    alpha: float | None = None
 
+    # 定义参数覆盖类，继承自BaseModel
+    dense_top_k: int   # 密集召回的前k个结果数量
+    sparse_top_k: int   # 稀疏召回的前k个结果数量
+    alpha: float   # 混合召回的权重参数，用于平衡密集召回和稀疏召回的结果
 
 class LegalChatRequest(BaseModel):
     question: str
@@ -25,11 +29,10 @@ class LegalChatResponse(BaseModel):
 
 _legal_sessions = {}
 
-
+"""法律咨询接口"""
 @router.post("/api/legal/chat", response_model=LegalChatResponse)
 def legal_chat(req: LegalChatRequest):
-    from agent.legal_graph import LegalGraph
-    from api import _get_upload_llms
+    
 
     session = _legal_sessions.get(req.session_id)
 
@@ -41,7 +44,8 @@ def legal_chat(req: LegalChatRequest):
             needs_followup=False,
         )
 
-    chat_llm, reasoner_llm = _get_upload_llms()
+    chat_llm = CHAT_LLM
+    reasoner_llm = REASONER_LLM
     legal_graph = LegalGraph(chat_llm, reasoner_llm)
 
     history_parts = []

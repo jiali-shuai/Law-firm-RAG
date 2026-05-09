@@ -4,11 +4,16 @@ from typing import List
 import os
 import uuid
 
-from database.milvus import (
+from llmodel.llm import CHAT_LLM
+
+
+from database.milvus import insert_bge_m3_vectors
+from database.registry import (
     list_registered_files, register_file_source, delete_file_by_source,
     _next_source_id,
-    insert_bge_m3_vectors,
+    
 )
+
 from qianru.BGE import create_bge_m3_embeddings
 from agent.FengKuaiAgent import SmartChunkerAgent
 
@@ -41,7 +46,7 @@ def upload_document(
     file: UploadFile = File(...),
     collection_name: str = Form(...),
 ):
-    from api import _get_upload_llms
+    
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
@@ -62,7 +67,7 @@ def upload_document(
         with open(tmp_path, "wb") as f:
             f.write(content)
 
-        chat_llm, _ = _get_upload_llms()
+        chat_llm = CHAT_LLM
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取文件失败: {e}")
 

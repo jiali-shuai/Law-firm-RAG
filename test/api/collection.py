@@ -20,20 +20,21 @@ class CreateCollectionRequest(BaseModel):
     name: str
     description: str
 
-
+"""服务在线检查"""
 @router.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
+"""列出所有集合"""
 @router.get("/api/collections", response_model=ListCollectionsResponse)
 def get_collections():
     items = list_collections()
     return ListCollectionsResponse(
-        items=[CollectionItem(name=c["name"], description=c["description"]) for c in items]
+        items=[CollectionItem(name=item["name"], description=item["description"]) for item in items]
     )
 
-
+"""创建集合"""
 @router.post("/api/collections")
 def create_collection(req: CreateCollectionRequest):
     name = req.name.strip()

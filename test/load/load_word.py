@@ -77,25 +77,49 @@ def _classify_boundaries(similarities, lower_threshold, upper_threshold):
     return boundaries
 
 
+def _parse_json(text: str):
+    text = text.strip()
+    import re
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+    if not text:
+        raise ValueError("LLM 返回空内容")
+    return json.loads(text)
+
+
 def _llm_resolve_gray_zones(paragraphs, gray_boundaries, chat_llm):
     prompt = load_prompt("gray_zone_chunker.txt")
 
     decisions = {}
-    for boundary_type, idx, sim in gray_boundaries:
-        if boundary_type != 'gray':
-            continue
-        para_a = paragraphs[idx]
-        para_b = paragraphs[idx + 1]
+    batch_size = 10
 
-        context = f"段落A:\n{para_a}\n\n段落B:\n{para_b}"
+    pure_grays = [(t, i, s) for t, i, s in gray_boundaries if t == 'gray']
+
+    for batch_start in range(0, len(pure_grays), batch_size):
+        batch = pure_grays[batch_start:batch_start + batch_size]
+
+        parts = []
+        for local_idx, (_, idx, sim) in enumerate(batch):
+            para_a = paragraphs[idx]
+            para_b = paragraphs[idx + 1]
+            parts.append(
+                f"--- 段落对 #{local_idx} (原始索引={idx}, 相似度={sim:.3f}) ---\n"
+                f"段落A:\n{para_a}\n\n"
+                f"段落B:\n{para_b}"
+            )
+
+        context = "\n\n".join(parts)
 
         response = chat_llm.invoke([
             ("system", prompt),
             ("user", context)
         ])
 
-        result = json.loads(response.content)
-        decisions[idx] = result.get("should_split", False)
+        batch_decisions = _parse_json(response.content)
+        for item in batch_decisions:
+            global_idx = batch[item["idx"]][1]
+            decisions[global_idx] = item.get("should_split", False)
 
     return decisions
 
