@@ -8,12 +8,8 @@ from llmodel.llm import CHAT_LLM
 
 
 from database.milvus import insert_bge_m3_vectors
-from database.registry import (
-    list_registered_files, register_file_source, delete_file_by_source,
-    _next_source_id,
+from database.registry import list_registered_files, register_file_source, delete_file_by_source, _next_source_id
     
-)
-
 from qianru.BGE import create_bge_m3_embeddings
 from agent.FengKuaiAgent import SmartChunkerAgent
 
@@ -32,7 +28,7 @@ class FileInfo(BaseModel):
 class ListFilesResponse(BaseModel):
     items: List[FileInfo]
 
-
+"""列出所有已注册的文档"""
 @router.get("/api/documents", response_model=ListFilesResponse)
 def get_documents():
     items = list_registered_files()
@@ -40,7 +36,7 @@ def get_documents():
         items=[FileInfo(file_name=item["file_name"], collection_name=item["collection_name"], source_id=item["source_id"]) for item in items]
     )
 
-
+"""上传文档"""
 @router.post("/api/documents/upload")
 def upload_document(
     file: UploadFile = File(...),
@@ -80,10 +76,9 @@ def upload_document(
             raise HTTPException(status_code=400, detail="文档无有效内容")
 
         dense_emb, sparse_emb, _ = create_bge_m3_embeddings(texts)
-
         source_id = _next_source_id()
-        chunk_ids = insert_bge_m3_vectors(texts, dense_emb, sparse_emb, collection_name=collection_name, source_id=source_id)
 
+        insert_bge_m3_vectors(texts, dense_emb, sparse_emb, collection_name=collection_name, source_id=source_id)
         register_file_source(file.filename, collection_name, source_id)
 
         return {
@@ -97,7 +92,7 @@ def upload_document(
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-
+"""删除文档"""
 @router.delete("/api/documents/{file_name}")
 def delete_document(file_name: str):
     try:

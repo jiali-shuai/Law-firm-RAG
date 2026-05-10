@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
 
-from database.milvus import list_collections, create_collection_entry
+from database.milvus import list_collections_all, create_collection_entry
 
 router = APIRouter()
 
@@ -29,7 +29,7 @@ def health():
 """列出所有集合"""
 @router.get("/api/collections", response_model=ListCollectionsResponse)
 def get_collections():
-    items = list_collections()
+    items = list_collections_all()
     return ListCollectionsResponse(
         items=[CollectionItem(name=item["name"], description=item["description"]) for item in items]
     )

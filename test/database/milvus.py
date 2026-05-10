@@ -1,15 +1,16 @@
 from pymilvus import MilvusClient, FieldSchema, CollectionSchema, DataType
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict,Optional
 from config import MILVUS_URI, COLLECTION_NAME
 
-
+RRF_K = 30# RRF 融合参数
 """连接Milvus数据库"""
 client = None
 def get_client():
     global client
     if client is None:
-        client = MilvusClient(uri=MILVUS_URI)
+        client = MilvusClient(uri=MILVUS_URI,timeout=6)
     return client
 
 
@@ -147,52 +148,41 @@ def sparse_to_milvus_format(query_sparse: List[Dict[int, float]]):
     return query_sparse
 
 
-""" BGE-M3 双路混合检索（dense + sparse）"""
-def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, alpha,collection_name:Optional[str]=None):
 
-    dense_res = search_dense_vectors(dense_to_milvus_format(query_dense), dense_top_k, collection_name)
-    sparse_res = search_sparse_vectors(sparse_to_milvus_format(query_sparse), sparse_top_k, collection_name)
+""" BGE-M3 双路混合检索（dense + sparse 并发 + RRF 融合）"""
+
+def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, alpha,collection_name:Optional[str]=None):
+    dense_query = dense_to_milvus_format(query_dense)
+    sparse_query = sparse_to_milvus_format(query_sparse)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        dense_future = executor.submit(search_dense_vectors, dense_query, dense_top_k, collection_name)
+        sparse_future = executor.submit(search_sparse_vectors, sparse_query, sparse_top_k, collection_name)
+        dense_res = dense_future.result()
+        sparse_res = sparse_future.result()
 
     doc_dict = {}
 
-    for hit in dense_res[0]:
+    for rank, hit in enumerate(dense_res[0]):
         doc_dict[hit.id] = {
             "text": hit.entity["text"],
-            "d_score": hit.distance,
-            "s_score": 0
+            "rrf_score": alpha / (RRF_K + rank + 1)
         }
 
-    for hit in sparse_res[0]:
+    for rank, hit in enumerate(sparse_res[0]):
+        rrf_score = (1 - alpha) / (RRF_K + rank + 1)
         if hit.id in doc_dict:
-            doc_dict[hit.id]["s_score"] = hit.distance
+            doc_dict[hit.id]["rrf_score"] += rrf_score
         else:
             doc_dict[hit.id] = {
                 "text": hit.entity["text"],
-                "d_score": 0,
-                "s_score": hit.distance
+                "rrf_score": rrf_score
             }
-    """归一化处理"""
-    all_d = [info["d_score"] for info in doc_dict.values()]
-    all_s = [info["s_score"] for info in doc_dict.values()]
 
-    d_min, d_max = min(all_d), max(all_d)
-    s_min, s_max = min(all_s), max(all_s)
-    d_range = d_max - d_min
-    s_range = s_max - s_min
-
-    for info in doc_dict.values():
-        info["d_score"] = (info["d_score"] - d_min) / d_range if d_range > 0 else 0
-        info["s_score"] = (info["s_score"] - s_min) / s_range if s_range > 0 else 0
-
-    combined = []
-    for doc_id, info in doc_dict.items():
-        final_score = alpha * info["d_score"] + (1 - alpha) * info["s_score"]
-        combined.append({
-            "id": doc_id,
-            "text": info["text"],
-            "distance": final_score
-        })
-
+    combined = [
+        {"id": doc_id, "text": info["text"], "distance": info["rrf_score"]}
+        for doc_id, info in doc_dict.items()
+    ]
     combined = sorted(combined, key=lambda x: x["distance"], reverse=True)
     return [combined[:dense_top_k + sparse_top_k]]
 
@@ -201,7 +191,7 @@ def hybrid_search_bge_m3(query_dense, query_sparse, dense_top_k, sparse_top_k, a
 
 """""""""""""""""""""""""""""""""返回数据阶段"""""""""""""""""""""""""""""""""
 """列出所有集合（名称+描述）"""
-def list_collections():
+def list_collections_all():
     client = get_client()
     names = client.list_collections()
     result = []

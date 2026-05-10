@@ -19,12 +19,10 @@
   {
     "idx": 0,
     "should_split": true,
-    "reason": "主题转变"
   },
   {
     "idx": 1,
     "should_split": false,
-    "reason": "内容延续"
   }
 ]
 必须为每个输入的段落对返回一个判断结果。
